@@ -1,5 +1,5 @@
 import { google } from "googleapis";
-import GoogleToken from "../../models/GoogleToken.js";
+import GoogleToken from "../models/GoogleToken.js";
 
 const TIMEZONE = "Asia/Kolkata";
 
