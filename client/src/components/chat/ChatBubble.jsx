@@ -1,9 +1,13 @@
-import Avatar from '../common/Avatar';
+import Avatar from "../common/Avatar";
+import { useAuth } from "../../context/AuthContext";
 
 const ChatBubble = ({ message, isUser, timestamp }) => {
+  const { user } = useAuth();
+  const displayName = user?.fullName || user?.username || "You";
+
   return (
     <div
-      className={`flex gap-2.5 animate-slide-up ${isUser ? 'flex-row-reverse' : ''}`}
+      className={`flex gap-2.5 animate-slide-up ${isUser ? "flex-row-reverse" : ""}`}
     >
       {!isUser && (
         <div className="flex-shrink-0 mt-auto">
@@ -14,24 +18,27 @@ const ChatBubble = ({ message, isUser, timestamp }) => {
       )}
       {isUser && (
         <div className="flex-shrink-0 mt-auto">
-          <Avatar name="Vatsal" size="sm" />
+          <Avatar src={user?.profilePicture} name={displayName} size="sm" />
         </div>
       )}
 
-      <div className={`max-w-[75%] ${isUser ? 'items-end' : 'items-start'}`}>
+      <div className={`max-w-[75%] ${isUser ? "items-end" : "items-start"}`}>
         <div
           className={`
-            px-4 py-3 rounded-2xl text-sm leading-relaxed
-            ${isUser
-              ? 'bg-forest-700 text-white rounded-br-md'
-              : 'bg-surface-raised text-text-primary rounded-bl-md'
+            px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap
+            ${
+              isUser
+                ? "bg-forest-700 text-white rounded-br-md"
+                : "bg-surface-raised text-text-primary rounded-bl-md"
             }
           `}
         >
           {message}
         </div>
         {timestamp && (
-          <p className={`text-[10px] text-text-muted mt-1 ${isUser ? 'text-right' : ''}`}>
+          <p
+            className={`text-[10px] text-text-muted mt-1 ${isUser ? "text-right" : ""}`}
+          >
             {timestamp}
           </p>
         )}
