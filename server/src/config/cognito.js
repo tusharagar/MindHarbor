@@ -1,6 +1,5 @@
-// config/cognito.js
-import { Issuer, generators } from "openid-client";
 import pkg from "amazon-cognito-identity-js";
+import { Issuer, generators } from "openid-client";
 
 const {
   CognitoUserPool,
@@ -9,51 +8,39 @@ const {
   CognitoUser,
 } = pkg;
 
-// ── Cognito User Pool (for email/password auth) ───────────────────────────────
-const poolData = {
+// ── User Pool (no client secret needed) ──────────────────────────────────────
+export const userPool = new CognitoUserPool({
   UserPoolId: process.env.COGNITO_USER_POOL_ID,
   ClientId: process.env.COGNITO_CLIENT_ID,
-};
+  // No client secret here — App Client must be created WITHOUT a secret
+});
 
-const userPool = new CognitoUserPool(poolData);
-
-// ── OIDC Client (for Google OAuth via Cognito Hosted UI) ──────────────────────
+// ── OIDC Client (Google OAuth – lazy initialized) ─────────────────────────────
 let oidcClient = null;
 
-export const initOidcClient = async () => {
+export const getOidcClient = async () => {
+  if (oidcClient) return oidcClient;
+
   try {
-    // Auto-discovers Cognito's OIDC endpoints (jwks_uri, token_endpoint, etc.)
     const issuer = await Issuer.discover(
       `https://cognito-idp.${process.env.AWS_REGION}.amazonaws.com/${process.env.COGNITO_USER_POOL_ID}`,
     );
-
     oidcClient = new issuer.Client({
       client_id: process.env.COGNITO_CLIENT_ID,
-      client_secret: process.env.COGNITO_CLIENT_SECRET,
+      // No client_secret since we removed it from the App Client
       redirect_uris: [process.env.COGNITO_REDIRECT_URI],
       response_types: ["code"],
     });
-
-    console.log("✅ OIDC client initialized");
+    console.log("✅ OIDC client initialized (Google login ready)");
     return oidcClient;
   } catch (err) {
-    console.error("❌ OIDC client init failed:", err.message);
-    throw err;
+    console.warn("⚠️  OIDC init failed:", err.message);
+    throw new Error("Google login unavailable. Check your Cognito config.");
   }
 };
 
-// Returns the initialized OIDC client (call after initOidcClient)
-export const getOidcClient = () => {
-  if (!oidcClient)
-    throw new Error(
-      "OIDC client not initialized. Call initOidcClient() first.",
-    );
-  return oidcClient;
-};
-
-// Generates a Google login URL with nonce + state baked in
-export const buildGoogleAuthUrl = (nonce, state) => {
-  const client = getOidcClient();
+export const buildGoogleAuthUrl = async (nonce, state) => {
+  const client = await getOidcClient();
   return client.authorizationUrl({
     scope: "openid email profile",
     identity_provider: "Google",
@@ -62,11 +49,4 @@ export const buildGoogleAuthUrl = (nonce, state) => {
   });
 };
 
-export {
-  userPool,
-  poolData,
-  CognitoUserAttribute,
-  AuthenticationDetails,
-  CognitoUser,
-  generators, // re-export so controllers can use generators.nonce() / generators.state()
-};
+export { CognitoUserAttribute, AuthenticationDetails, CognitoUser, generators };

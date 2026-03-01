@@ -6,24 +6,22 @@ import cookieParser from "cookie-parser";
 import session from "express-session";
 
 import connectDB from "./config/database.js";
-import { initOidcClient } from "./config/cognito.js";
 import authRoutes from "./routes/authRoutes.js";
 import errorHandler from "./middleware/errorHandler.js";
 
 const app = express();
 
-// ── Session (required for storing nonce + state during Google OAuth) ──────────
-// nonce/state are short-lived values that only exist between /google and /google/callback
+// ── Session (only used during Google OAuth flow to hold nonce + state) ─────────
 app.use(
   session({
     secret: process.env.SESSION_SECRET || "dev-session-secret",
     resave: false,
     saveUninitialized: false,
-    cookie: { httpOnly: true, maxAge: 5 * 60 * 1000 }, // 5 min – just enough for OAuth flow
+    cookie: { httpOnly: true, maxAge: 5 * 60 * 1000 }, // 5 min – just long enough for OAuth
   }),
 );
 
-// ── General Middleware ────────────────────────────────────────────────────────
+// ── Middleware ─────────────────────────────────────────────────────────────────
 app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }));
 app.use(morgan("dev"));
 app.use(express.json());
@@ -40,25 +38,27 @@ app.get("/health", (_req, res) =>
 
 // ── 404 ───────────────────────────────────────────────────────────────────────
 app.use((_req, res) =>
-  res.status(404).json({
-    success: false,
-    message: "Route not found.",
-    errors: ["NOT_FOUND"],
-  }),
+  res.status(404).json({ success: false, message: "Route not found." }),
 );
 
 // ── Error Handler ─────────────────────────────────────────────────────────────
 app.use(errorHandler);
 
-// ── Bootstrap: connect DB + init OIDC, then start server ─────────────────────
+// ── Start: only DB connection needed on boot, OIDC is lazy ───────────────────
 const PORT = process.env.PORT || 5000;
 
 const start = async () => {
-  await connectDB();
-  await initOidcClient(); // discovers Cognito OIDC endpoints before accepting requests
-  app.listen(PORT, () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
-  });
+  try {
+    await connectDB();
+    // NOTE: OIDC client (for Google login) initializes lazily on first Google request
+    // Email/password register, login, etc. work immediately without Cognito discovery
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on http://localhost:${PORT}`);
+    });
+  } catch (err) {
+    console.error("Failed to start server:", err.message);
+    process.exit(1);
+  }
 };
 
 start();

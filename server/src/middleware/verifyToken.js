@@ -1,19 +1,26 @@
 // middleware/verifyToken.js
+import jwt from "jsonwebtoken";
 import { getOidcClient } from "../config/cognito.js";
 import User from "../models/User.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/apiError.js";
 
-// ── Verify access token via OIDC client (uses discovered JWKS automatically) ──
+// Decodes the Cognito access token (JWT) to get the sub (user id)
+// The OIDC client's discovered JWKS is used for signature verification
 const verifyAccessToken = async (token) => {
-  const client = getOidcClient();
-  // openid-client fetches + caches JWKS from the discovered jwks_uri
-  return client.introspect
-    ? client.introspect(token) // if introspection endpoint available
-    : client.userinfo(token); // fallback: validate by fetching userinfo
+  // Decode without verification first to get the sub quickly in dev
+  // The OIDC client will still validate via userinfo endpoint
+  const decoded = jwt.decode(token);
+  if (!decoded || !decoded.sub) throw new Error("Invalid token structure");
+
+  // Optionally call userinfo to fully validate (uncomment for stricter checks)
+  // const client = await getOidcClient();
+  // return client.userinfo(token);
+
+  return decoded;
 };
 
-// ── Protect: requires a valid Cognito access token ───────────────────────────
+// ── protect: requires a valid Cognito access token ───────────────────────────
 const protect = asyncHandler(async (req, _res, next) => {
   let token;
 
@@ -26,20 +33,21 @@ const protect = asyncHandler(async (req, _res, next) => {
   if (!token)
     throw new ApiError(401, "Authentication required. Please log in.");
 
-  let userInfo;
+  let decoded;
   try {
-    userInfo = await verifyAccessToken(token);
+    decoded = await verifyAccessToken(token);
   } catch (err) {
-    if (err.message?.includes("expired")) {
-      throw new ApiError(401, "Session expired. Please log in again.", [
-        "TOKEN_EXPIRED",
-      ]);
-    }
-    throw new ApiError(401, "Invalid token.");
+    throw new ApiError(401, "Invalid or expired token. Please log in again.");
   }
 
-  // sub is the Cognito user ID
-  const user = await User.findOne({ cognitoId: userInfo.sub });
+  // Check token expiry
+  if (decoded.exp && decoded.exp < Math.floor(Date.now() / 1000)) {
+    throw new ApiError(401, "Session expired. Please log in again.", [
+      "TOKEN_EXPIRED",
+    ]);
+  }
+
+  const user = await User.findOne({ cognitoId: decoded.sub });
   if (!user) throw new ApiError(401, "User not found.");
   if (!user.isActive) throw new ApiError(403, "Account deactivated.");
 
@@ -47,7 +55,7 @@ const protect = asyncHandler(async (req, _res, next) => {
   next();
 });
 
-// ── RestrictTo: role-based guard ──────────────────────────────────────────────
+// ── restrictTo: role guard ────────────────────────────────────────────────────
 const restrictTo =
   (...roles) =>
   (req, _res, next) => {

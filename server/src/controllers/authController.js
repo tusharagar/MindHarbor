@@ -20,6 +20,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// Wraps Cognito's callback style into a Promise
 const cognitoPromise = (fn) =>
   new Promise((resolve, reject) =>
     fn((err, result) => (err ? reject(err) : resolve(result))),
@@ -68,7 +69,7 @@ export const register = asyncHandler(async (req, res) => {
 
   const attributeList = [
     new CognitoUserAttribute({ Name: "email", Value: email }),
-    new CognitoUserAttribute({ Name: "name", Value: fullName }),
+    new CognitoUserAttribute({ Name: "name", Value: fullName || "" }),
   ];
 
   const cognitoResult = await cognitoPromise((cb) =>
@@ -100,34 +101,45 @@ export const register = asyncHandler(async (req, res) => {
 //  2. VERIFY EMAIL
 // ─────────────────────────────────────────────────────────────────────────────
 export const verifyEmail = asyncHandler(async (req, res) => {
-  const { email, code } = req.body;
+  const { email } = req.body;
+  const code = String(req.body.code); // 🔥 ensure it's always a string
 
-  const cognitoUser = new CognitoUser({ Username: email, Pool: userPool });
+  if (!email || !code) {
+    throw new ApiError(400, "Email and verification code are required.");
+  }
+
+  const cognitoUser = new CognitoUser({
+    Username: email,
+    Pool: userPool,
+  });
+
   await cognitoPromise((cb) => cognitoUser.confirmRegistration(code, true, cb));
 
   const user = await User.findOneAndUpdate(
     { email },
     { isEmailVerified: true },
-    { new: true },
+    { returnDocument: "after" }, // ✅ fixes mongoose warning
   );
+
   if (!user) throw new ApiError(404, "User not found.");
 
-  return res
-    .status(200)
-    .json(
-      new ApiResponse(
-        200,
-        user.toSafeObject(),
-        "Email verified! You can now log in.",
-      ),
-    );
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        email: user.email,
+        verified: true,
+      },
+      "Email verified successfully. You can now log in.",
+    ),
+  );
 });
-
 // ─────────────────────────────────────────────────────────────────────────────
 //  3. RESEND VERIFICATION CODE
 // ─────────────────────────────────────────────────────────────────────────────
 export const resendVerification = asyncHandler(async (req, res) => {
   const { email } = req.body;
+
   const cognitoUser = new CognitoUser({ Username: email, Pool: userPool });
   await cognitoPromise((cb) => cognitoUser.resendConfirmationCode(cb));
 
@@ -164,6 +176,9 @@ export const login = asyncHandler(async (req, res) => {
       throw new ApiError(403, "Please verify your email before logging in.", [
         "EMAIL_NOT_VERIFIED",
       ]);
+    }
+    if (err.code === "NotAuthorizedException") {
+      throw new ApiError(401, "Invalid email or password.");
     }
     throw err;
   }
@@ -248,10 +263,9 @@ export const logout = asyncHandler(async (req, res) => {
     );
   }
 
-  // Also destroy the OIDC session (used for Google login state)
   if (req.session) req.session.destroy(() => {});
-
   clearTokenCookies(res);
+
   return res
     .status(200)
     .json(new ApiResponse(200, null, "Logged out successfully."));
@@ -262,8 +276,8 @@ export const logout = asyncHandler(async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 export const forgotPassword = asyncHandler(async (req, res) => {
   const { email } = req.body;
-  const cognitoUser = new CognitoUser({ Username: email, Pool: userPool });
 
+  const cognitoUser = new CognitoUser({ Username: email, Pool: userPool });
   await cognitoPromise((cb) =>
     cognitoUser.forgotPassword({
       onSuccess: (d) => cb(null, d),
@@ -287,8 +301,8 @@ export const forgotPassword = asyncHandler(async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 export const resetPassword = asyncHandler(async (req, res) => {
   const { email, code, newPassword } = req.body;
-  const cognitoUser = new CognitoUser({ Username: email, Pool: userPool });
 
+  const cognitoUser = new CognitoUser({ Username: email, Pool: userPool });
   await cognitoPromise((cb) =>
     cognitoUser.confirmPassword(code, newPassword, {
       onSuccess: () => cb(null, true),
@@ -305,31 +319,25 @@ export const resetPassword = asyncHandler(async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  9. GOOGLE AUTH – Redirect
-//  Generates nonce + state, stores them in session, redirects to Cognito Hosted UI
 // ─────────────────────────────────────────────────────────────────────────────
-export const googleAuth = (req, res) => {
+export const googleAuth = asyncHandler(async (req, res) => {
   const nonce = generators.nonce();
   const state = generators.state();
 
-  // Store in session so we can validate them in the callback
   req.session.nonce = nonce;
   req.session.state = state;
 
-  const authUrl = buildGoogleAuthUrl(nonce, state);
+  const authUrl = await buildGoogleAuthUrl(nonce, state);
   res.redirect(authUrl);
-};
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  10. GOOGLE AUTH – Callback
-//  openid-client validates state + nonce, exchanges code for tokens, fetches userInfo
 // ─────────────────────────────────────────────────────────────────────────────
 export const googleCallback = asyncHandler(async (req, res) => {
-  const client = getOidcClient();
-
-  // Parse callback params from the request
+  const client = await getOidcClient();
   const params = client.callbackParams(req);
 
-  // Exchange code → tokens AND validate state + nonce in one step
   let tokenSet;
   try {
     tokenSet = await client.callback(process.env.COGNITO_REDIRECT_URI, params, {
@@ -338,24 +346,20 @@ export const googleCallback = asyncHandler(async (req, res) => {
     });
   } catch (err) {
     console.error("OIDC callback error:", err.message);
-    throw new ApiError(401, `OAuth failed: ${err.message}`);
+    throw new ApiError(401, `Google login failed: ${err.message}`);
   }
 
-  // Clear nonce/state from session after use (one-time use)
   req.session.nonce = null;
   req.session.state = null;
 
-  // Fetch user profile from Cognito using the access token
   const userInfo = await client.userinfo(tokenSet.access_token);
   const { sub: cognitoId, email, name, picture } = userInfo;
 
-  // Upsert user in MongoDB
   let user = await User.findOne({ cognitoId });
 
   if (!user) {
     user = await User.findOne({ email });
     if (user) {
-      // Link Google to an existing email/password account
       await user.updateOne({
         cognitoId,
         googleId: cognitoId,
@@ -365,7 +369,6 @@ export const googleCallback = asyncHandler(async (req, res) => {
       });
       user = await User.findById(user._id);
     } else {
-      // Brand-new Google user
       const username = `${email.split("@")[0].replace(/[^a-zA-Z0-9_]/g, "_")}_${crypto.randomBytes(3).toString("hex")}`;
       user = await User.create({
         cognitoId,
@@ -392,7 +395,6 @@ export const googleCallback = asyncHandler(async (req, res) => {
   ]);
 
   setTokenCookies(res, tokens);
-
   return res.redirect(`${process.env.CLIENT_URL}/auth/callback?success=true`);
 });
 
@@ -402,7 +404,6 @@ export const googleCallback = asyncHandler(async (req, res) => {
 export const getMe = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id);
   if (!user) throw new ApiError(404, "User not found.");
-
   return res.status(200).json(new ApiResponse(200, user.toSafeObject()));
 });
 
