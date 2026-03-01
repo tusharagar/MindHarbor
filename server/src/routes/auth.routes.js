@@ -15,11 +15,11 @@ import {
   getMe,
   updateProfile,
   deleteAccount,
-} from "../controllers/authController.js";
+} from "../controllers/auth.controller.js";
 
 import { protect } from "../middleware/verifyToken.js";
 import { validate } from "../middleware/validate.js";
-import { errorHandler } from "../middleware/error.middleware.js";
+import errorHandler from "../middleware/errorHandler.js";
 
 const router = Router();
 
@@ -85,5 +85,4 @@ router.get("/me", protect, getMe);
 router.patch("/me", protect, updateProfile);
 router.delete("/me", protect, deleteAccount);
 
-router.use(errorHandler);
 export default router;
