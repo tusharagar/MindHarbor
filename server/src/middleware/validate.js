@@ -5,14 +5,17 @@ import { ApiError } from "../utils/apiError.js";
  * Runs after express-validator rules.
  * Collects all validation errors and throws a single ApiError with all messages.
  */
-const validate = (req, _res, next) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    const errorMessages = errors.array().map((e) => e.msg);
-    // Pass messages array as both the main message and the errors[] field
-    return next(new ApiError(400, errorMessages[0], errorMessages));
-  }
-  next();
+
+const validate = validators => {
+    return [
+      ...validators,
+      (req, res, next) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty())
+          return res.status(422).json({ error: errors.array() });
+        next();
+      },
+    ];
 };
 
 export { validate };

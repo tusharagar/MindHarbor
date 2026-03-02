@@ -6,9 +6,11 @@ import cookieParser from "cookie-parser";
 import session from "express-session";
 
 import connectDB from "./config/database.js";
-import authRoutes from "./routes/authRoutes.js";
+import authRoutes from "./routes/auth.routes.js";
 import chatRoutes from "./routes/chatRoutes.js";
 import errorHandler from "./middleware/errorHandler.js";
+import moodRoutes from "./routes/mood.routes.js";
+import mentalHealthRoutes from "./routes/mentalHealth.routes.js";
 
 const app = express();
 
@@ -32,6 +34,8 @@ app.use(cookieParser());
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use("/api/auth", authRoutes);
 app.use("/api/chat", chatRoutes);
+app.use("/api/mood", moodRoutes);
+app.use("/api/mental-health", mentalHealthRoutes);
 
 // ── Health Check ──────────────────────────────────────────────────────────────
 app.get("/health", (_req, res) =>
