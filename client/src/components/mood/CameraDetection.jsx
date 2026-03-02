@@ -121,13 +121,14 @@ const CameraDetection = ({ onDetect }) => {
         throw new Error(result.message || "Mood detection failed");
       }
 
-      // Pass clean data upward
+      // Pass clean data upward (mood already saved by API)
       onDetect?.({
-        emotion: result.data.moodLabel,
+        mood: result.data.mood,
+        moodLabel: result.data.moodLabel,
         confidence: result.data.confidence,
-        score: result.data.mood,
         id: result.data.id,
         createdAt: result.data.createdAt,
+        alreadySaved: true,
       });
 
       // Optional: Stop camera after detection

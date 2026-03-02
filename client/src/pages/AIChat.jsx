@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useLocation } from "react-router-dom";
 import {
   Send,
   Plus,
@@ -98,6 +99,8 @@ const SessionItem = ({ session, isActive, onClick, onDelete }) => {
 // ── Main Component ────────────────────────────────────────────────────────────
 const AIChat = () => {
   const { user } = useAuth();
+  const location = useLocation();
+  const moodContext = location.state?.moodContext;
 
   // Session
   const [sessions, setSessions] = useState([]);
@@ -196,7 +199,11 @@ const AIChat = () => {
 
     (async () => {
       const list = await loadSessions();
-      if (list.length === 0) {
+
+      // If mood context is provided, start a new session
+      if (moodContext) {
+        await startNewSession();
+      } else if (list.length === 0) {
         await startNewSession();
       } else {
         const latest = list.find((s) => s.isActive) || list[0];
@@ -204,6 +211,18 @@ const AIChat = () => {
       }
     })();
   }, []); // eslint-disable-line
+
+  // ── Auto-send mood message when session is ready ────────────────────────────
+  useEffect(() => {
+    if (moodContext && activeSessionId && !isTyping && messages.length <= 1) {
+      const moodMessage = `I'm feeling ${moodContext.label.toLowerCase()} right now ${moodContext.emoji}. Can you help me talk about it?`;
+      // Small delay to ensure UI is ready
+      const timer = setTimeout(() => {
+        sendMessage(moodMessage);
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [moodContext, activeSessionId, isTyping, messages.length]); // eslint-disable-line
 
   // ── Delete a session ────────────────────────────────────────────────────────
   const deleteSession = useCallback(

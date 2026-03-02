@@ -1,50 +1,41 @@
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 
-const data = [
-  { day: 'Mon', mood: 4, emoji: '😌' },
-  { day: 'Tue', mood: 3, emoji: '😐' },
-  { day: 'Wed', mood: 5, emoji: '😊' },
-  { day: 'Thu', mood: 2, emoji: '😔' },
-  { day: 'Fri', mood: 4, emoji: '😌' },
-  { day: 'Sat', mood: 5, emoji: '😊' },
-  { day: 'Sun', mood: 4, emoji: '😌' },
-];
+const MoodHistory = ({ logs = [] }) => {
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const colors = ['#3bcc88', '#73e2ad', '#86efac', '#c4a87a', '#3bcc88', '#86efac', '#73e2ad'];
-
-const CustomTooltip = ({ active, payload, label }) => {
-  if (active && payload && payload.length) {
-    const entry = data.find((d) => d.day === label);
-    return (
-      <div className="card-elevated px-3 py-2 text-xs">
-        <p className="font-medium">{label}: {entry?.emoji} ({payload[0].value}/5)</p>
-      </div>
+  const chartData = days.map((dayName, index) => {
+    const dayLogs = logs.filter(
+      (l) => new Date(l.createdAt).getDay() === index,
     );
-  }
-  return null;
-};
+    // Calculate average mood value (0-6 scale from mood.model.js)
+    const avg = dayLogs.length
+      ? dayLogs.reduce((a, b) => a + b.value, 0) / dayLogs.length
+      : 0;
+    return { day: dayName, mood: parseFloat(avg.toFixed(1)) };
+  });
 
-const MoodHistory = () => {
   return (
-    <div>
-      <p className="section-label text-text-muted mb-1">Past week</p>
-      <h3 className="text-lg font-semibold text-text-primary mb-6">Mood History</h3>
-      <div className="h-52">
-        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <BarChart data={data} barCategoryGap="25%">
+    <div className="bg-surface p-6 rounded-3xl border border-forest-800/20 h-full">
+      <h3 className="text-lg font-semibold mb-6">Weekly Intensity</h3>
+      <div className="h-64">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={chartData}>
             <XAxis
               dataKey="day"
               axisLine={false}
               tickLine={false}
-              tick={{ fontSize: 12, fill: '#637d70' }}
+              tick={{ fill: "#637d70" }}
             />
-            <YAxis domain={[0, 5]} hide />
-            <Tooltip content={<CustomTooltip />} />
-            <Bar dataKey="mood" radius={[8, 8, 0, 0]}>
-              {data.map((_, i) => (
-                <Cell key={i} fill={colors[i]} fillOpacity={0.6} />
-              ))}
-            </Bar>
+            <YAxis domain={[0, 6]} hide />
+            <Tooltip />
+            <Bar dataKey="mood" fill="#3bcc88" radius={[6, 6, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
