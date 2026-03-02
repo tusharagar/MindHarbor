@@ -83,6 +83,6 @@ router.get("/google/callback", googleCallback);
 // ── Protected ─────────────────────────────────────────────────────────────────
 router.get("/me", protect, getMe);
 router.patch("/me", protect, updateProfile);
-router.delete("/me", protect, deleteAccount);
+router.delete("/delete-account", protect, deleteAccount);
 
 export default router;

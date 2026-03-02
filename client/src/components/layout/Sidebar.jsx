@@ -10,6 +10,7 @@ import {
   Settings,
   X,
   Calendar,
+  MessageSquare,
 } from "lucide-react";
 
 const navItems = [
@@ -18,7 +19,11 @@ const navItems = [
   { to: "/chat", icon: MessageCircleHeart, label: "AI Support Chat" },
   { to: "/resources", icon: BookOpen, label: "Resources" },
   { to: "/analytics", icon: BarChart3, label: "Analytics" },
-  { to: "/counselor", icon: CalendarHeart, label: "Counselor Booking" },
+  {
+    to: "/community",
+    icon: MessageSquare,
+    label: "Student Exclusive Community",
+  },
   { to: "/planner", icon: Calendar, label: "Study Planner" },
   { to: "/profile", icon: User, label: "Profile" },
   { to: "/settings", icon: Settings, label: "Settings" },
