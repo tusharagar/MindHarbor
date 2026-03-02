@@ -1,5 +1,10 @@
 import { useNavigate } from "react-router-dom";
-import { MessageCircleHeart, SmilePlus, ArrowRight } from "lucide-react";
+import {
+  MessageCircleHeart,
+  SmilePlus,
+  Calendar,
+  ArrowRight,
+} from "lucide-react";
 
 const actions = [
   {
@@ -15,6 +20,13 @@ const actions = [
     description: "Record how you feel right now",
     accent: "text-mint-300",
     to: "/mood",
+  },
+  {
+    icon: Calendar,
+    label: "Create Study Planner",
+    description: "Generate a personalized study plan",
+    accent: "text-blue-400",
+    to: "/planner",
   },
 ];
 
