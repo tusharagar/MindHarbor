@@ -8,6 +8,7 @@ import session from "express-session";
 import connectDB from "./config/database.js";
 import authRoutes from "./routes/auth.routes.js";
 import chatRoutes from "./routes/chatRoutes.js";
+import studyPlannerRoutes from "./routes/studyPlannerRoutes.js";
 import errorHandler from "./middleware/errorHandler.js";
 import moodRoutes from "./routes/mood.routes.js";
 import mentalHealthRoutes from "./routes/mentalHealth.routes.js";
@@ -34,6 +35,7 @@ app.use(cookieParser());
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use("/api/auth", authRoutes);
 app.use("/api/chat", chatRoutes);
+app.use("/api/planner", studyPlannerRoutes);
 app.use("/api/mood", moodRoutes);
 app.use("/api/mental-health", mentalHealthRoutes);
 

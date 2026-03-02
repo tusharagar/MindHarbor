@@ -1,11 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 
-// ─────────────────────────────────────────────────────────────
-// Initialize Gemini
-// ─────────────────────────────────────────────────────────────
-const genAI = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-});
+const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 console.log(
   process.env.GEMINI_API_KEY
@@ -13,9 +8,6 @@ console.log(
     : "❌ Gemini API key missing",
 );
 
-// ─────────────────────────────────────────────────────────────
-// Mood Descriptions
-// ─────────────────────────────────────────────────────────────
 const MOOD_DESCRIPTIONS = {
   very_sad: "feeling very sad and down",
   sad: "feeling sad",
@@ -27,18 +19,13 @@ const MOOD_DESCRIPTIONS = {
   calm: "feeling calm and relaxed",
 };
 
-// ─────────────────────────────────────────────────────────────
-// Build System Prompt
-// ─────────────────────────────────────────────────────────────
 export const buildSystemPrompt = (moodContext) => {
   const moodDesc = moodContext?.label
     ? MOOD_DESCRIPTIONS[moodContext.label] || moodContext.label
     : "unknown mood";
-
   const moodScore = moodContext?.score
     ? `${moodContext.score}/10`
     : "not recorded";
-
   const detectedVia =
     moodContext?.detectedVia === "facial"
       ? "facial expression analysis"
@@ -50,11 +37,7 @@ STUDENT'S CURRENT EMOTIONAL STATE:
 - Mood: ${moodDesc}
 - Mood score: ${moodScore}
 - Detected via: ${detectedVia}
-- Recorded at: ${
-    moodContext?.recordedAt
-      ? new Date(moodContext.recordedAt).toLocaleString("en-IN")
-      : "recently"
-  }
+- Recorded at: ${moodContext?.recordedAt ? new Date(moodContext.recordedAt).toLocaleString("en-IN") : "recently"}
 
 YOUR ROLE:
 - Provide empathetic, non-judgmental emotional support tailored to the student's current mood
@@ -66,50 +49,59 @@ YOUR ROLE:
 - If the student expresses thoughts of self-harm or crisis, immediately provide iCall helpline (9152987821)
 
 BOUNDARIES:
-- Do not diagnose
-- Do not prescribe medication
+- Do not diagnose or prescribe medication
 - Keep responses concise (3-5 sentences max)
 - Always end with an open question`;
 };
 
-// ─────────────────────────────────────────────────────────────
-// Send Message to Gemini (NEW SDK)
-// ─────────────────────────────────────────────────────────────
 export const sendMessage = async (
   userMessage,
   chatHistory = [],
   moodContext = null,
+  ragContextBlock = null,
 ) => {
   try {
-    const systemPrompt = buildSystemPrompt(moodContext);
+    const systemInstruction = buildSystemPrompt(moodContext);
 
-    // 🔥 Trim history to last 5 messages to save tokens
-    const trimmedHistory = chatHistory.slice(-5);
+    // ── Build history for Gemini ───────────────────────────────────────────
+    // Rules:
+    //   1. roles must strictly alternate: user → model → user → model ...
+    //   2. history must START with a user turn
+    //   3. history must END with a model turn (current user message added separately)
+    //   4. valid roles: "user" and "model" only (NOT "assistant")
 
-    // Convert DB format → Gemini format
-    const formattedHistory = trimmedHistory.map((msg) => ({
-      role: msg.role === "model" ? "assistant" : "user",
-      parts: [{ text: msg.content }],
-    }));
+    const trimmedHistory = chatHistory.slice(-10); // last 5 pairs
 
-    // Combine system prompt + history + current message
+    const formattedHistory = trimmedHistory
+      .filter((msg) => msg.role === "user" || msg.role === "model")
+      .map((msg) => ({
+        role: msg.role, // keep "user" or "model" as-is
+        parts: [{ text: msg.content }],
+      }));
+
+    // ── Inject RAG context into the first user message if available ────────
+    // Prepend it to the current user message rather than adding an extra role
+    const messageWithContext = ragContextBlock
+      ? `${ragContextBlock}\n\n---\n\nStudent message: ${userMessage}`
+      : userMessage;
+
+    // ── Final contents array ───────────────────────────────────────────────
+    // history (alternating user/model) + current user message
     const contents = [
-      {
-        role: "user",
-        parts: [{ text: systemPrompt }],
-      },
       ...formattedHistory,
       {
         role: "user",
-        parts: [{ text: userMessage }],
+        parts: [{ text: messageWithContext }],
       },
     ];
 
+    // ── Call Gemini using systemInstruction (NOT a user role message) ──────
     const response = await genAI.models.generateContent({
-      model: "gemini-2.5-flash", // Safe + stable
+      model: "gemini-2.5-flash",
       contents,
-      generationConfig: {
-        maxOutputTokens: 300, // Lowered to save quota
+      config: {
+        systemInstruction, // ← correct way to pass system prompt
+        maxOutputTokens: 300,
         temperature: 0.75,
         topP: 0.9,
       },
@@ -117,7 +109,7 @@ export const sendMessage = async (
 
     return response.text;
   } catch (error) {
-    console.error("Gemini error:", error.message);
+    console.error("Gemini error:", JSON.stringify(error.message || error));
     throw new Error("AI service unavailable. Please try again.");
   }
 };
