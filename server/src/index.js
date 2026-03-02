@@ -4,7 +4,8 @@ import cors from "cors";
 import morgan from "morgan";
 import cookieParser from "cookie-parser";
 import session from "express-session";
-
+import { initFirebase } from "./config/firebase.js";
+import communityRoutes from "./routes/communityRoutes.js";
 import connectDB from "./config/database.js";
 import authRoutes from "./routes/authRoutes.js";
 import chatRoutes from "./routes/chatRoutes.js";
@@ -37,6 +38,7 @@ app.use("/api/chat", chatRoutes);
 app.use("/api/planner", studyPlannerRoutes);
 app.use("/api/mood", moodRoutes);
 app.use("/api/mental-health", mentalHealthRoutes);
+app.use("/api/community", communityRoutes);
 
 // ── Health Check ──────────────────────────────────────────────────────────────
 app.get("/health", (_req, res) =>
@@ -57,6 +59,7 @@ const PORT = process.env.PORT || 5000;
 const start = async () => {
   try {
     await connectDB();
+    initFirebase();
     // NOTE: OIDC client (for Google login) initializes lazily on first Google request
     // Email/password register, login, etc. work immediately without Cognito discovery
     app.listen(PORT, () => {
