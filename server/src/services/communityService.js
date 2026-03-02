@@ -1,8 +1,10 @@
-import { getDB, getBucket } from "../config/firebase.js";
-import { v4 as uuid } from "uuid";
-import path from "path";
+import { getDB } from "../config/firebase.js";
+import { uploadImageBuffer, deleteImage } from "./cloudinaryService.js";
 
-// ── Anonymous name generator ──────────────────────────────────────────────────
+/* ─────────────────────────────────────────────────────────────
+   Anonymous Name Generator
+───────────────────────────────────────────────────────────── */
+
 const ADJECTIVES = [
   "Calm",
   "Brave",
@@ -20,6 +22,7 @@ const ADJECTIVES = [
   "Mindful",
   "Resilient",
 ];
+
 const ANIMALS = [
   "Panda",
   "Owl",
@@ -39,79 +42,86 @@ const ANIMALS = [
 ];
 
 export const generateAnonName = (userId) => {
-  // Deterministic from userId so same user always gets same name per session context
   const seed = userId.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
   const adj = ADJECTIVES[seed % ADJECTIVES.length];
   const ani = ANIMALS[(seed >> 2) % ANIMALS.length];
   return `${adj} ${ani}`;
 };
 
-// ── Upload media to Firebase Storage ─────────────────────────────────────────
+/* ─────────────────────────────────────────────────────────────
+   MEDIA (Cloudinary)
+───────────────────────────────────────────────────────────── */
+
 export const uploadMedia = async (file) => {
-  const bucket = getBucket();
-  const ext = path.extname(file.originalname) || ".bin";
-  const fileName = `community/${uuid()}${ext}`;
-  const fileRef = bucket.file(fileName);
+  if (!file) return null;
 
-  await fileRef.save(file.buffer, {
-    contentType: file.mimetype,
-    metadata: { firebaseStorageDownloadTokens: uuid() },
-  });
+  console.log(
+    `[Storage] Uploading ${file.originalname} (${file.buffer?.length} bytes)`,
+  );
 
-  await fileRef.makePublic();
-  const url = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+  const result = await uploadImageBuffer(file.buffer, file.mimetype);
+
+  console.log(`[Storage] ✅ Cloudinary URL: ${result.url}`);
 
   return {
-    url,
-    fileName,
-    type: file.mimetype.startsWith("video/") ? "video" : "image",
+    url: result.url,
+    publicId: result.publicId,
+    type: "image",
   };
 };
 
-// ── Delete media from Firebase Storage ───────────────────────────────────────
-export const deleteMedia = async (fileName) => {
-  if (!fileName) return;
-  try {
-    await getBucket().file(fileName).delete();
-  } catch (e) {
-    console.warn("[Storage] Delete failed:", e.message);
-  }
+export const deleteMedia = async (publicId) => {
+  if (!publicId) return;
+  await deleteImage(publicId);
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  POSTS
-// ─────────────────────────────────────────────────────────────────────────────
+/* ─────────────────────────────────────────────────────────────
+   POSTS
+───────────────────────────────────────────────────────────── */
 
 export const createPost = async ({
   userId,
   content,
-  media,
+  mediaFiles, // array of multer files
   mode,
   institute,
+  hasCrisisFlag,
 }) => {
   const db = getDB();
   const now = new Date().toISOString();
+
+  let media = [];
+
+  if (mediaFiles && mediaFiles.length > 0) {
+    for (const file of mediaFiles) {
+      const uploaded = await uploadMedia(file);
+      if (uploaded) media.push(uploaded);
+    }
+  }
 
   const post = {
     userId,
     anonName: generateAnonName(userId),
     content: content || "",
-    media: media || [], // [{ url, fileName, type }]
-    mode, // 'global' | 'institute'
+    media, // [{ url, publicId, type }]
+    mode,
     institute: mode === "institute" ? institute || "" : null,
-    likes: [], // array of userIds
+    likes: [],
     commentCount: 0,
     isHidden: false,
+    hasCrisisFlag: hasCrisisFlag || false,
     createdAt: now,
     updatedAt: now,
   };
 
   const ref = await db.collection("posts").add(post);
+
   return { id: ref.id, ...post };
 };
 
 export const getPosts = async ({ mode, institute, lastDoc, limit = 15 }) => {
   const db = getDB();
+
   let query = db
     .collection("posts")
     .where("isHidden", "==", false)
@@ -128,7 +138,11 @@ export const getPosts = async ({ mode, institute, lastDoc, limit = 15 }) => {
   }
 
   const snapshot = await query.limit(limit).get();
-  const posts = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+  const posts = snapshot.docs.map((d) => ({
+    id: d.id,
+    ...d.data(),
+  }));
 
   return {
     posts,
@@ -146,15 +160,21 @@ export const toggleLike = async (postId, userId) => {
   const db = getDB();
   const ref = db.collection("posts").doc(postId);
   const doc = await ref.get();
+
   if (!doc.exists) throw new Error("Post not found");
 
   const likes = doc.data().likes || [];
   const liked = likes.includes(userId);
+
   const updated = liked
     ? likes.filter((id) => id !== userId)
     : [...likes, userId];
 
-  await ref.update({ likes: updated, updatedAt: new Date().toISOString() });
+  await ref.update({
+    likes: updated,
+    updatedAt: new Date().toISOString(),
+  });
+
   return { liked: !liked, likeCount: updated.length };
 };
 
@@ -165,9 +185,9 @@ export const hidePost = async (postId) => {
   });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  COMMENTS
-// ─────────────────────────────────────────────────────────────────────────────
+/* ─────────────────────────────────────────────────────────────
+   COMMENTS
+───────────────────────────────────────────────────────────── */
 
 export const createComment = async ({ postId, userId, content, parentId }) => {
   const db = getDB();
@@ -178,7 +198,7 @@ export const createComment = async ({ postId, userId, content, parentId }) => {
     userId,
     anonName: generateAnonName(userId),
     content,
-    parentId: parentId || null, // for nested replies
+    parentId: parentId || null,
     likes: [],
     isHidden: false,
     createdAt: now,
@@ -187,9 +207,10 @@ export const createComment = async ({ postId, userId, content, parentId }) => {
 
   const ref = await db.collection("comments").add(comment);
 
-  // Increment post comment count
+  // Update comment count
   const postRef = db.collection("posts").doc(postId);
   const postDoc = await postRef.get();
+
   if (postDoc.exists) {
     await postRef.update({
       commentCount: (postDoc.data().commentCount || 0) + 1,
@@ -208,7 +229,10 @@ export const getComments = async (postId) => {
     .orderBy("createdAt", "asc")
     .get();
 
-  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+  return snapshot.docs.map((d) => ({
+    id: d.id,
+    ...d.data(),
+  }));
 };
 
 export const hideComment = async (commentId) => {
@@ -222,14 +246,20 @@ export const toggleCommentLike = async (commentId, userId) => {
   const db = getDB();
   const ref = db.collection("comments").doc(commentId);
   const doc = await ref.get();
+
   if (!doc.exists) throw new Error("Comment not found");
 
   const likes = doc.data().likes || [];
   const liked = likes.includes(userId);
+
   const updated = liked
     ? likes.filter((id) => id !== userId)
     : [...likes, userId];
 
-  await ref.update({ likes: updated, updatedAt: new Date().toISOString() });
+  await ref.update({
+    likes: updated,
+    updatedAt: new Date().toISOString(),
+  });
+
   return { liked: !liked, likeCount: updated.length };
 };

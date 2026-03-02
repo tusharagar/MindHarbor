@@ -1,7 +1,12 @@
-import { Router } from 'express';
-import { protect } from '../middleware/verifyToken.js';
-import upload from '../middleware/multer.middleware.js';
-import { saveMood, getMoodHistory, getRecentMood, analyzeMood } from '../controllers/mood.controller.js';
+import { Router } from "express";
+import { protect } from "../middleware/verifyToken.js";
+import upload from "../middleware/multer.middleware.js";
+import {
+  saveMood,
+  getMoodHistory,
+  getRecentMood,
+  analyzeMood,
+} from "../controllers/mood.controller.js";
 
 const router = Router();
 
@@ -9,9 +14,9 @@ const router = Router();
 router.use(protect);
 
 // Mood tracking routes
-router.post('/', saveMood);
-router.get('/', getMoodHistory);
-router.get('/recent', getRecentMood);
-router.post('/analyze', upload.single('image'), analyzeMood);
+router.post("/", saveMood);
+router.get("/", getMoodHistory);
+router.get("/recent", getRecentMood);
+router.post("/analyze", upload.single("file"), analyzeMood);
 
 export default router;

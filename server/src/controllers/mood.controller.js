@@ -4,140 +4,172 @@ import FormData from "form-data";
 import { ApiResponse } from "../utils/apiResponse.js";
 import { ApiError } from "../utils/apiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+// ✅ Isolated axios instance — no global interceptors, no auth token leaking
+const mlAxios = axios.create();
 
 // Save mood
 export const saveMood = asyncHandler(async (req, res) => {
-	const { value, label, notes, capturedVia } = req.body;
+  const { value, label, notes, capturedVia } = req.body;
 
-	const mood = await Mood.create({
-		user: req.user.id,
-		value,
-		label,
-		notes: notes || "",
-		capturedVia: capturedVia || "manual",
-	});
+  const mood = await Mood.create({
+    user: req.user.id,
+    value,
+    label,
+    notes: notes || "",
+    capturedVia: capturedVia || "manual",
+  });
 
-	res.status(201).json(new ApiResponse(201, mood, "Mood saved successfully"));
+  res.status(201).json(new ApiResponse(201, mood, "Mood saved successfully"));
 });
 
 // Get mood history
 export const getMoodHistory = asyncHandler(async (req, res) => {
-	const page = parseInt(req.query.page) || 1;
-	const limit = parseInt(req.query.limit) || 10;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const skip = (page - 1) * limit;
 
-	const skip = (page - 1) * limit;
+  const moods = await Mood.find({ user: req.user.id })
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit);
 
-	const moods = await Mood.find({ user: req.user.id })
-		.sort({ createdAt: -1 })
-		.skip(skip)
-		.limit(limit);
+  const total = await Mood.countDocuments({ user: req.user.id });
 
-	const total = await Mood.countDocuments({ user: req.user.id });
-
-	res.status(200).json(
-		new ApiResponse(
-			200,
-			{
-				count: moods.length,
-				total,
-				pages: Math.ceil(total / limit),
-				page,
-				data: moods,
-			},
-			"Mood history retrieved successfully",
-		),
-	);
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        count: moods.length,
+        total,
+        pages: Math.ceil(total / limit),
+        page,
+        data: moods,
+      },
+      "Mood history retrieved successfully",
+    ),
+  );
 });
 
 // Get recent mood
 export const getRecentMood = asyncHandler(async (req, res) => {
-	const recentMood = await Mood.findOne({ user: req.user.id }).sort({
-		createdAt: -1,
-	});
+  const recentMood = await Mood.findOne({ user: req.user.id }).sort({
+    createdAt: -1,
+  });
 
-	if (!recentMood) throw new ApiError(404, "No mood entries found");
+  if (!recentMood) throw new ApiError(404, "No mood entries found");
 
-	const isRecent =
-		recentMood.createdAt >= new Date(Date.now() - 4 * 60 * 60 * 1000);
+  const isRecent =
+    recentMood.createdAt >= new Date(Date.now() - 4 * 60 * 60 * 1000);
 
-	res.status(200).json(
-		new ApiResponse(
-			200,
-			{ data: recentMood._doc, isRecent },
-			"Recent mood retrieved successfully",
-		),
-	);
+  res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        { data: recentMood.toObject(), isRecent },
+        "Recent mood retrieved successfully",
+      ),
+    );
 });
 
-//   Analyze mood via ML
+// Analyze mood via ML
 export const analyzeMood = asyncHandler(async (req, res) => {
-	if (!req.file) throw new ApiError(400, "No image file uploaded");
+  if (!req.file) throw new ApiError(400, "No image file uploaded");
 
-	const formData = new FormData();
-	formData.append("image", req.file.buffer, {
-		filename: "capture.jpg",
-		contentType: req.file.mimetype,
-	});
+  const formData = new FormData();
+  formData.append("file", req.file.buffer, {
+    filename: "capture.jpg",
+    contentType: req.file.mimetype,
+  });
 
-	const mlUrl =
-		process.env.ML_SERVICE_URL || "http://localhost:5000/predict_emotion";
+  const mlUrl = process.env.ML_SERVICE_URL || "http://localhost:8000/predict";
 
-	let prediction;
+  let prediction;
 
-	try {
-		const mlResponse = await axios.post(mlUrl, formData, {
-			headers: {
-				...formData.getHeaders(),
-				"Content-Type": "multipart/form-data",
-			},
-			timeout: 10000,
-		});
+  try {
+    // ✅ Using isolated mlAxios — won't carry auth token or any interceptors
+    const mlResponse = await mlAxios.post(mlUrl, formData, {
+      headers: {
+        ...formData.getHeaders(),
+        Authorization: undefined, // ✅ explicitly strip auth just in case
+      },
+      timeout: 10000,
+    });
 
-		if (!mlResponse.data?.mood) throw new Error("Invalid ML response");
+    const { emotion, confidence } = mlResponse.data;
 
-		prediction = {
-			value: mlResponse.data.mood,
-			label: mlResponse.data.moodLabel,
-		};
-	} catch (err) {
-		// Fallback
-		const labels = [
-			"Angry",
-			"Disgust",
-			"Fear",
-			"Happy",
-			"Neutral",
-			"Sad",
-			"Surprise",
-		];
+    if (!emotion) throw new Error("Invalid ML response: missing emotion field");
 
-		const value = Math.floor(Math.random() * 7);
+    const label =
+      emotion.charAt(0).toUpperCase() + emotion.slice(1).toLowerCase();
 
-		prediction = {
-			value,
-			label: labels[value],
-			notes: "Generated by fallback system (ML unavailable)",
-		};
-	}
+    const emotionLabels = [
+      "Angry",
+      "Disgust",
+      "Fear",
+      "Happy",
+      "Neutral",
+      "Sad",
+      "Surprise",
+    ];
 
-	const mood = await Mood.create({
-		user: req.user.id,
-		value: prediction.value,
-		label: prediction.label,
-		notes: prediction.notes,
-		capturedVia: "ai",
-	});
+    const emotionIndex = emotionLabels.findIndex(
+      (e) => e.toLowerCase() === emotion.toLowerCase(),
+    );
 
-	res.status(200).json(
-		new ApiResponse(
-			200,
-			{
-				mood: prediction.value,
-				moodLabel: prediction.label,
-				id: mood._id,
-				createdAt: mood.createdAt,
-			},
-			"Mood analyzed successfully",
-		),
-	);
+    if (emotionIndex === -1) throw new Error(`Unknown emotion: ${emotion}`);
+
+    prediction = {
+      value: emotionIndex,
+      label,
+      confidence: confidence ?? null,
+      notes: "",
+    };
+  } catch (err) {
+    console.error("ML service error:", err.message);
+
+    const labels = [
+      "Angry",
+      "Disgust",
+      "Fear",
+      "Happy",
+      "Neutral",
+      "Sad",
+      "Surprise",
+    ];
+    const value = Math.floor(Math.random() * 7);
+
+    prediction = {
+      value,
+      label: labels[value],
+      confidence: null,
+      notes: "Generated by fallback system (ML unavailable)",
+    };
+  }
+
+  const mood = await Mood.create({
+    user: req.user.id,
+    value: prediction.value,
+    label: prediction.label,
+    notes: prediction.notes,
+    capturedVia: "ai",
+  });
+
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        mood: prediction.value,
+        moodLabel: prediction.label,
+        confidence: prediction.confidence,
+        id: mood._id,
+        createdAt: mood.createdAt,
+      },
+      "Mood analyzed successfully",
+    ),
+  );
 });

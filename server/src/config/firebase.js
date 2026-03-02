@@ -1,13 +1,11 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { getStorage } from "firebase-admin/storage";
 
-let db, storage;
+let db;
 
 export const initFirebase = () => {
   if (getApps().length > 0) {
     db = getFirestore();
-    storage = getStorage();
     return;
   }
 
@@ -24,16 +22,10 @@ export const initFirebase = () => {
     client_x509_cert_url: process.env.FIREBASE_CLIENT_CERT_URL,
   };
 
-  initializeApp({
-    credential: cert(serviceAccount),
-    storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-  });
+  initializeApp({ credential: cert(serviceAccount) });
 
   db = getFirestore();
-  storage = getStorage();
-
-  console.log("✅ Firebase Admin initialised");
+  console.log("✅ Firebase Admin initialised (Firestore only)");
 };
 
 export const getDB = () => db;
-export const getBucket = () => storage.bucket();

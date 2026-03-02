@@ -91,8 +91,32 @@ export const createPostHandler = asyncHandler(async (req, res) => {
   // Upload media FIRST so Gemini can analyze the actual content
   let media = [];
   if (req.files?.length) {
+    console.log(
+      `[Community] Uploading ${req.files.length} file(s):`,
+      req.files.map((f) => `${f.originalname} (${f.mimetype}, ${f.size}b)`),
+    );
+
     const results = await Promise.allSettled(req.files.map(uploadMedia));
-    media = results.filter((r) => r.status === "fulfilled").map((r) => r.value);
+
+    results.forEach((r, i) => {
+      if (r.status === "fulfilled") {
+        console.log(`[Community] ✅ Uploaded: ${r.value.url}`);
+        media.push(r.value);
+      } else {
+        console.error(
+          `[Community] ❌ Upload failed for file ${i}:`,
+          r.reason?.message || r.reason,
+        );
+      }
+    });
+
+    // If some files were provided but ALL failed to upload, return an error
+    if (req.files.length > 0 && media.length === 0) {
+      throw new ApiError(
+        500,
+        `Media upload failed: ${results[0].reason?.message || "Cloudinary upload error. Check CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET in .env."}`,
+      );
+    }
   }
 
   // Run Gemini moderation on text + uploaded media
@@ -107,7 +131,9 @@ export const createPostHandler = asyncHandler(async (req, res) => {
     // Clean up uploaded media since post was rejected
     if (media.length) {
       const { deleteMedia } = await import("../services/communityService.js");
-      await Promise.allSettled(media.map((m) => deleteMedia(m.fileName)));
+      await Promise.allSettled(
+        media.map((m) => deleteMedia(m.publicId, m.type)),
+      );
     }
     return;
   }

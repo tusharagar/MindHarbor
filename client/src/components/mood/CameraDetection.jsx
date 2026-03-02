@@ -111,7 +111,7 @@ const CameraDetection = ({ onDetect }) => {
       const blob = await (await fetch(dataUrl)).blob();
 
       const formData = new FormData();
-      formData.append("image", blob, "snapshot.jpg");
+      formData.append("file", blob, "snapshot.jpg");
 
       const result = await moodService.analyzeMood(formData);
 
@@ -124,6 +124,7 @@ const CameraDetection = ({ onDetect }) => {
       // Pass clean data upward
       onDetect?.({
         emotion: result.data.moodLabel,
+        confidence: result.data.confidence,
         score: result.data.mood,
         id: result.data.id,
         createdAt: result.data.createdAt,
