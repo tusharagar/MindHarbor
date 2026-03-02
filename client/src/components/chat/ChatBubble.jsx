@@ -1,5 +1,5 @@
 import Avatar from "../common/Avatar";
-import { useAuth } from "../../context/AuthContext";
+import { useAuth } from "../../context/Authcontext";
 
 const ChatBubble = ({ message, isUser, timestamp }) => {
   const { user } = useAuth();
