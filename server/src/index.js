@@ -13,7 +13,7 @@ import studyPlannerRoutes from "./routes/studyPlannerRoutes.js";
 import errorHandler from "./middleware/errorHandler.js";
 import moodRoutes from "./routes/mood.routes.js";
 import mentalHealthRoutes from "./routes/mentalHealth.routes.js";
-
+import analyticsRoutes from "./routes/analyticsRoutes.js";
 const app = express();
 // ── Session (only used during Google OAuth flow to hold nonce + state) ─────────
 app.use(
@@ -39,7 +39,7 @@ app.use("/api/planner", studyPlannerRoutes);
 app.use("/api/mood", moodRoutes);
 app.use("/api/mental-health", mentalHealthRoutes);
 app.use("/api/community", communityRoutes);
-
+app.use("/api/analytics", analyticsRoutes);
 // ── Health Check ──────────────────────────────────────────────────────────────
 app.get("/health", (_req, res) =>
   res.json({ status: "ok", timestamp: new Date().toISOString() }),
