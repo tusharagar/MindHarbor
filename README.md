@@ -47,7 +47,6 @@ Mental health challenges among students are at an all-time high, yet access to p
 
 - 24/7 AI-powered emotional support
 - Real-time mood tracking with facial emotion recognition
-- Personalized mental health resources
 - Professional counselor booking system
 - Academic planning tools to reduce stress
 
@@ -89,18 +88,6 @@ Mental health challenges among students are at an all-time high, yet access to p
 - **Calendar Integration**: Sync with Google Calendar for seamless scheduling
 - **Task Management**: Track study sessions and assignments
 - **Stress-Aware Scheduling**: Considers workload to prevent burnout
-
-### 🧘 Resource Library
-
-- **Curated Content**: Access 100+ mental wellness resources
-  - Guided meditation videos
-  - Relaxing audio tracks
-  - Informative posters and guides
-  - Motivational quotes
-  - Self-help books and workbooks
-- **Mood-Based Filtering**: Resources categorized by emotional needs
-- **Download Support**: Save resources for offline access
-- **Tag-Based Search**: Find exactly what you need quickly
 
 ### 👨‍⚕️ Counselor Booking System
 
@@ -643,11 +630,6 @@ _Real-time facial emotion recognition using advanced ML_
 
 ![Analytics](docs/screenshots/analytics.png)
 _Comprehensive mood trends and insights_
-
-### Resource Library
-
-![Resources](docs/screenshots/resources.png)
-_Curated mental wellness content library_
 
 ---
 
